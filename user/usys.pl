@@ -14,7 +14,7 @@ sub entry {
     print " ecall\n";
     print " ret\n";
 }
-	
+
 entry("fork");
 entry("exit");
 entry("wait");
@@ -22,6 +22,7 @@ entry("pipe");
 entry("read");
 entry("write");
 entry("close");
+entry("trace");
 entry("kill");
 entry("exec");
 entry("open");
