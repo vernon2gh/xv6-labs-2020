@@ -1,5 +1,6 @@
 struct stat;
 struct rtcdate;
+struct sysinfo;
 
 // system calls
 int fork(void);
@@ -10,6 +11,7 @@ int write(int, const void*, int);
 int read(int, void*, int);
 int close(int);
 int trace(int);
+int sysinfo(struct sysinfo *);
 int kill(int);
 int exec(char*, char**);
 int open(const char*, int);
