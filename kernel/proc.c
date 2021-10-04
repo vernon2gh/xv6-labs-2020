@@ -232,6 +232,7 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+  kvmcopy(p->pagetable, p->kpagetable, 0, (0 + p->sz));
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -258,8 +259,13 @@ growproc(int n)
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+
+    if (kvmcopy(p->pagetable, p->kpagetable, p->sz, (p->sz + n)) != 0) {
+        return -1;
+    }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    kvmdealloc(p->kpagetable, p->sz, (p->sz + n));
   }
   p->sz = sz;
   return 0;
@@ -285,6 +291,13 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
+  if(kvmcopy(np->pagetable, np->kpagetable, 0, (0 + p->sz)) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+
   np->sz = p->sz;
 
   np->parent = p;
@@ -732,9 +745,6 @@ pagetable_t make_process_kernel_pagetable()
   // virtio mmio disk interface
   mappages(tmp, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W);
 
-  // CLINT
-  mappages(tmp, CLINT, 0x10000, CLINT, PTE_R | PTE_W);
-
   // PLIC
   mappages(tmp, PLIC, 0x400000, PLIC, PTE_R | PTE_W);
 
@@ -757,7 +767,7 @@ void free_pagetable_pages(pagetable_t pagetable)
   // there are 2^9 = 512 PTEs in a page table.
   for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];
-    if(pte & PTE_V){
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
       // this PTE points to a lower-level page table.
       uint64 child = PTE2PA(pte);
       free_pagetable_pages((pagetable_t)child);
@@ -775,7 +785,6 @@ void free_process_kernel_pagetable(struct proc *p)
   /* unmap va to pa only */
   uvmunmap(pagetable, UART0, 1, 0);
   uvmunmap(pagetable, VIRTIO0, 1, 0);
-  uvmunmap(pagetable, CLINT, 0x10000/PGSIZE, 0);
   uvmunmap(pagetable, PLIC, 0x400000/PGSIZE, 0);
   uvmunmap(pagetable, KERNBASE, ((uint64)etext-KERNBASE)/PGSIZE, 0);
   uvmunmap(pagetable, (uint64)etext, (PHYSTOP-(uint64)etext)/PGSIZE, 0);

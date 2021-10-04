@@ -271,6 +271,19 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   return newsz;
 }
 
+uint64 kvmdealloc(pagetable_t kpagetable, uint64 oldsz, uint64 newsz)
+{
+  if(newsz >= oldsz)
+    return oldsz;
+
+  if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
+    int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+    uvmunmap(kpagetable, PGROUNDUP(newsz), npages, 0);
+  }
+
+  return newsz;
+}
+
 // Recursively free page-table pages.
 // All leaf mappings must already have been removed.
 void
@@ -337,6 +350,38 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return -1;
 }
 
+// share user page table to kernel page table of process
+int kvmcopy(pagetable_t old, pagetable_t new, uint64 start_va, uint64 end_va)
+{
+  pte_t *pte;
+  uint64 pa, i;
+  uint flags;
+
+  if (end_va > PLIC)
+    return -1;
+
+  start_va = PGROUNDUP(start_va);
+
+  for(i = start_va; i < end_va; i += PGSIZE) {
+    if((pte = walk(old, i, 0)) == 0)
+      panic("kvmcopy: pte should exist");
+
+    if((*pte & PTE_V) == 0)
+      panic("kvmcopy: page not present");
+
+    pa = PTE2PA(*pte);
+    flags = PTE_FLAGS(*pte) & (~PTE_U);
+
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0)
+      goto err;
+  }
+  return 0;
+
+err:
+  uvmunmap(new, start_va, i / PGSIZE, 0);
+  return -1;
+}
+
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
 void
@@ -381,6 +426,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+  return copyin_new(pagetable, dst, srcva, len);
+
+/*
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -398,6 +446,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     srcva = va0 + PGSIZE;
   }
   return 0;
+*/
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -407,6 +456,9 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
+  return copyinstr_new(pagetable, dst, srcva, max);
+
+/*
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -441,6 +493,7 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+*/
 }
 
 void __vmprint(pagetable_t pagetable, int level)
