@@ -121,6 +121,7 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
@@ -132,3 +133,25 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void backtrace(void)
+{
+  uint64 fp;
+  uint64 stack_top;
+
+  printf("backtrace:\n");
+
+  fp = r_fp();
+
+  // Xv6 allocates one page for each stack in the xv6 kernel at PAGE-aligned address
+  stack_top = PGROUNDUP(fp); 
+
+  while(fp < stack_top) {
+    // the return address lives at a fixed offset (-8) from the frame pointer of a stackframe
+    printf("%p\n", *(uint64 *)(fp-8));
+
+    // the saved frame pointer lives at fixed offset (-16) from the frame pointer
+    fp = *(uint64 *)(fp-16);
+  }
+}
+
